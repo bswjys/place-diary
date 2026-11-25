@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>오늘의 발자국</title>
+<meta name="theme-color" content="#F5F6F8">
+<meta name="description" content="매일 간 곳과 사진, 내용을 달력에 남기는 나만의 포토 다이어리">
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="icon" href="./icon-192.png" sizes="192x192" type="image/png">
+<link rel="apple-touch-icon" href="./apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="발자국">
+<link rel="stylesheet" href="./styles.css?v=1">
+</head>
+<body>
+<div class="app">
+  <header class="topbar">
+    <h1 class="app-title">오늘의 발자국</h1>
+    <div class="top-actions">
+      <button class="icon-btn" id="searchBtn" type="button" aria-label="검색">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.6-3.6"></path></svg>
+      </button>
+      <button class="icon-btn" id="backupBtn" type="button" aria-label="백업 및 설정">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5v10.5"></path><path d="M8.2 10.2 12 14l3.8-3.8"></path><path d="M4.5 16v2.5a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V16"></path></svg>
+      </button>
+    </div>
+  </header>
+
+  <main>
+    <section class="card cal-card" aria-label="월간 달력">
+      <div class="cal-head">
+        <h2 class="cal-title" id="calTitle">2026년 11월</h2>
+        <div class="cal-ctrl">
+          <button class="round-btn" id="prevMonth" type="button" aria-label="이전 달">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 6l-6 6 6 6"></path></svg>
+          </button>
+          <button class="round-btn" id="nextMonth" type="button" aria-label="다음 달">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 6l6 6-6 6"></path></svg>
+          </button>
+          <button class="today-btn" id="todayBtn" type="button">오늘</button>
+        </div>
+      </div>
+      <div class="weekdays" aria-hidden="true">
+        <span class="sun">일</span><span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span class="sat">토</span>
+      </div>
+      <div class="days" id="dayGrid" role="group" aria-label="날짜 선택"></div>
+    </section>
+  </main>
+</div>
+
+<!-- 그날의 기록 시트 -->
+<div class="sheet-backdrop" id="dayBackdrop" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="dayTitle">
+    <div class="sheet-grip" aria-hidden="true"></div>
+    <div class="sheet-head">
+      <div>
+        <h2 id="dayTitle">11월 25일 (수)</h2>
+        <p class="sheet-sub" id="daySub"></p>
+      </div>
+      <button class="sheet-close" id="dayClose" type="button">닫기</button>
+    </div>
+    <div class="sheet-body" id="dayBody">
+      <div class="kind-row">
+        <button class="kind-btn" id="kindHome" type="button" data-kind="home">
+          <span class="kind-emoji" aria-hidden="true">🏠</span><span class="kind-label">집</span>
+        </button>
+        <button class="kind-btn" id="kindOuting" type="button" data-kind="outing">
+          <span class="kind-emoji" aria-hidden="true">📍</span><span class="kind-label">외출</span>
+        </button>
+      </div>
+
+      <form class="entry-form" id="entryForm" hidden novalidate>
+        <div class="field" id="placeField">
+          <label for="placeInput">장소</label>
+          <input id="placeInput" type="text" list="placeOptions" placeholder="예: 연남동 카페" autocomplete="off" enterkeyhint="done">
+          <datalist id="placeOptions"></datalist>
+          <div class="chips" id="placeChips"></div>
+          <div class="chip-tools">
+            <button type="button" class="link-btn" id="chipEditBtn">장소 편집</button>
+            <div class="chip-editor" id="chipEditor" hidden>
+              <input id="chipNewInput" type="text" placeholder="자주 가는 장소 추가" autocomplete="off">
+              <button type="button" class="chip-add" id="chipAddBtn">추가</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="field" id="photoField">
+          <label>사진</label>
+          <div class="photo-row" id="photoRow"></div>
+          <div class="photo-btns">
+            <button type="button" class="photo-btn" id="cameraBtn">📷 사진 찍기</button>
+            <button type="button" class="photo-btn" id="albumBtn">🖼 앨범에서</button>
+          </div>
+          <input type="file" id="cameraInput" accept="image/*" capture="environment" hidden>
+          <input type="file" id="albumInput" accept="image/*" multiple hidden>
+          <p class="field-hint">사진은 이 기기 안에만 저장돼요</p>
+        </div>
+
+        <div class="field">
+          <label for="noteInput">내용</label>
+          <textarea id="noteInput" rows="3" placeholder="오늘 있었던 일을 적어 보세요"></textarea>
+        </div>
+
+        <div class="form-actions">
+          <button type="button" class="btn-ghost" id="formCancel">취소</button>
+          <button type="submit" class="btn-primary" id="formSave">저장</button>
+        </div>
+      </form>
+
+      <section class="rec-section" aria-label="이 날의 기록">
+        <div class="rec-head">
+          <h3>이 날의 기록</h3>
+          <span class="rec-count" id="recCount"></span>
+        </div>
+        <ul class="rec-list" id="recList"></ul>
+      </section>
+
+      <p class="foot-note">기록은 이 기기 안에만 저장돼요</p>
+    </div>
+  </div>
+</div>
+
+<!-- 백업 · 설정 시트 -->
+<div class="sheet-backdrop" id="backupBackdrop" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="backupTitle">
+    <div class="sheet-grip" aria-hidden="true"></div>
+    <div class="sheet-head">
+      <div>
+        <h2 id="backupTitle">백업 · 설정</h2>
+        <p class="sheet-sub">폰을 바꾸기 전에 한 번씩 백업해 두세요</p>
+      </div>
+      <button class="sheet-close" id="backupClose" type="button">닫기</button>
+    </div>
+    <div class="sheet-body">
+      <div class="info-box">
+        <p class="info-strong" id="storageTitle">이 기기에 저장 중</p>
+        <p class="info-sub" id="storageInfo">기록 0개 · 사진 0장</p>
+      </div>
+      <p class="hint">기록과 사진은 서버로 보내지 않고 오직 이 아이폰 안(IndexedDB)에만 저장돼요. 내보낸 JSON 파일에는 사진도 함께 담겨요.</p>
+      <button class="btn-primary wide" id="exportBtn" type="button">JSON으로 내보내기</button>
+      <a class="save-link" id="exportLink" href="#" download hidden>백업 파일 저장하기</a>
+      <button class="btn-ghost wide" id="importBtn" type="button">JSON 불러오기</button>
+      <input type="file" id="importInput" accept=".json,application/json" hidden>
+      <p class="hint small" id="importHint">불러오면 같은 기록은 덮어쓰고, 새 기록은 더해져요.</p>
+    </div>
+  </div>
+</div>
+
+<!-- 검색 -->
+<div class="overlay" id="searchOverlay" hidden>
+  <div class="search-panel" role="dialog" aria-modal="true" aria-labelledby="searchTitle">
+    <h2 class="sr-only" id="searchTitle">검색</h2>
+    <div class="search-bar">
+      <svg class="search-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.6-3.6"></path></svg>
+      <input id="searchInput" type="search" placeholder="장소나 내용으로 찾기" autocomplete="off" enterkeyhint="search">
+      <button class="search-cancel" id="searchClose" type="button">취소</button>
+    </div>
+    <div class="search-body">
+      <p class="search-hint" id="searchHint">가본 곳 이름이나 적어 둔 내용을 검색해 보세요.</p>
+      <ul class="search-results" id="searchResults"></ul>
+    </div>
+  </div>
+</div>
+
+<!-- 사진 크게 보기 -->
+<div class="lightbox" id="lightbox" hidden>
+  <button class="lb-close" id="lbClose" type="button" aria-label="닫기">✕</button>
+  <img id="lbImg" alt="기록 사진">
+  <button class="lb-nav prev" id="lbPrev" type="button" aria-label="이전 사진">‹</button>
+  <button class="lb-nav next" id="lbNext" type="button" aria-label="다음 사진">›</button>
+  <div class="lb-count" id="lbCount"></div>
+</div>
+
+<!-- 확인 대화상자 -->
+<div class="dialog-backdrop" id="dialogBackdrop" hidden>
+  <div class="dialog" role="alertdialog" aria-modal="true" aria-labelledby="dialogText">
+    <p id="dialogText">삭제할까요?</p>
+    <div class="dialog-actions">
+      <button type="button" class="dialog-cancel" id="dialogCancel">취소</button>
+      <button type="button" class="dialog-ok" id="dialogOk">삭제</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+<script src="./app.js?v=1"></script>
+</body>
+</html>
