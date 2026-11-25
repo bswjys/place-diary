@@ -1397,9 +1397,9 @@ async function init() {
     toast('저장 공간을 열지 못했어요. 사파리 설정을 확인해 주세요');
   }
   if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js').catch(() => {});
-    });
+    const register = () => navigator.serviceWorker.register('./sw.js').catch(() => {});
+    if (document.readyState === 'complete') register();
+    else window.addEventListener('load', register, { once: true });
   }
 }
 

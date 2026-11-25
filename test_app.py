@@ -221,6 +221,25 @@ with sync_playwright() as pw:
     page.wait_for_selector('.days .day')
     page.wait_for_timeout(250)
     check('새로고침 후 🏠 유지', page.locator(f'.day[data-date="{day}"] .mark').inner_text() == '🏠')
+
+    # --- 서비스워커(오프라인) 동작
+    try:
+        page.wait_for_function("() => navigator.serviceWorker.getRegistration().then(r => !!r && !!r.active)", timeout=8000)
+        sw_ok = True
+    except Exception:
+        sw_ok = False
+    check('서비스워커 등록·활성화', sw_ok)
+    if sw_ok:
+        page.context.set_offline(True)
+        page.reload(wait_until='domcontentloaded')
+        page.wait_for_selector('.days .day', timeout=8000)
+        page.wait_for_timeout(400)
+        check('오프라인에서도 화면 열림', page.locator('.cal-card').is_visible())
+        check('오프라인에서도 기록 표시', page.locator(f'.day[data-date="{day}"] .mark').inner_text() == '🏠')
+        page.context.set_offline(False)
+        page.reload(wait_until='networkidle')
+        page.wait_for_selector('.days .day')
+        page.wait_for_timeout(300)
     dump = db_dump(page)
     check('IndexedDB entries 1개', len(dump['entries']) == 1, dump['entries'])
     check('IndexedDB entries 스키마', dump['entries'][0]['kind'] == 'home' and dump['entries'][0]['date'] == day, dump['entries'][0])
