@@ -13,7 +13,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="발자국">
-<link rel="stylesheet" href="./styles.css?v=1">
+<link rel="stylesheet" href="./styles.css?v=2">
 </head>
 <body>
 <div class="app">
@@ -48,31 +48,34 @@
       </div>
       <div class="days" id="dayGrid" role="group" aria-label="날짜 선택"></div>
     </section>
-  </main>
-</div>
 
-<!-- 그날의 기록 시트 -->
-<div class="sheet-backdrop" id="dayBackdrop" hidden>
-  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="dayTitle">
-    <div class="sheet-grip" aria-hidden="true"></div>
-    <div class="sheet-head">
-      <div>
-        <h2 id="dayTitle">11월 25일 (수)</h2>
-        <p class="sheet-sub" id="daySub"></p>
+    <!-- 달력 아래: 선택한 날(기본 오늘)의 발자국 -->
+    <section class="card day-card" id="dayCard" aria-label="선택한 날의 발자국">
+      <div class="day-head">
+        <div class="day-head-text">
+          <div class="day-title-row">
+            <h2 class="day-title" id="dayTitle">11월 25일 (수)</h2>
+            <span class="day-pill" id="dayPill" hidden>오늘</span>
+          </div>
+          <p class="day-sub" id="daySub"></p>
+        </div>
+        <div class="quick-row" role="group" aria-label="빠른 기록">
+          <button class="quick-btn" id="quickHome" type="button" data-kind="home" aria-pressed="false">
+            <span class="q-emoji" aria-hidden="true">🏠</span><span class="q-label">집</span>
+          </button>
+          <button class="quick-btn" id="quickOuting" type="button" data-kind="outing" aria-pressed="false">
+            <span class="q-emoji" aria-hidden="true">📍</span><span class="q-label">외출</span>
+          </button>
+        </div>
       </div>
-      <button class="sheet-close" id="dayClose" type="button">닫기</button>
-    </div>
-    <div class="sheet-body" id="dayBody">
-      <div class="kind-row">
-        <button class="kind-btn" id="kindHome" type="button" data-kind="home">
-          <span class="kind-emoji" aria-hidden="true">🏠</span><span class="kind-label">집</span>
-        </button>
-        <button class="kind-btn" id="kindOuting" type="button" data-kind="outing">
-          <span class="kind-emoji" aria-hidden="true">📍</span><span class="kind-label">외출</span>
-        </button>
+
+      <div class="day-empty" id="dayEmpty" hidden>
+        <p class="day-empty-title" id="dayEmptyTitle">아직 오늘의 발자국이 없어요</p>
+        <p class="day-empty-sub" id="dayEmptySub">아래에 바로 적고 저장할 수 있어요</p>
       </div>
 
       <form class="entry-form" id="entryForm" hidden novalidate>
+        <p class="form-title" id="formTitle" hidden></p>
         <div class="field" id="placeField">
           <label for="placeInput">장소</label>
           <input id="placeInput" type="text" list="placeOptions" placeholder="예: 연남동 카페" autocomplete="off" enterkeyhint="done">
@@ -110,17 +113,13 @@
         </div>
       </form>
 
-      <section class="rec-section" aria-label="이 날의 기록">
-        <div class="rec-head">
-          <h3>이 날의 기록</h3>
-          <span class="rec-count" id="recCount"></span>
-        </div>
-        <ul class="rec-list" id="recList"></ul>
-      </section>
+      <ul class="rec-list" id="recList"></ul>
 
-      <p class="foot-note">기록은 이 기기 안에만 저장돼요</p>
-    </div>
-  </div>
+      <button class="add-more" id="addMoreBtn" type="button" hidden>
+        <span class="add-plus" aria-hidden="true">+</span> 기록 추가
+      </button>
+    </section>
+  </main>
 </div>
 
 <!-- 백업 · 설정 시트 -->
@@ -187,6 +186,6 @@
 
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
-<script src="./app.js?v=1"></script>
+<script src="./app.js?v=2"></script>
 </body>
 </html>

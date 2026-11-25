@@ -262,13 +262,18 @@ const el = {
   searchBtn: $('#searchBtn'),
   backupBtn: $('#backupBtn'),
 
-  dayBackdrop: $('#dayBackdrop'),
+  dayCard: $('#dayCard'),
   dayTitle: $('#dayTitle'),
+  dayPill: $('#dayPill'),
   daySub: $('#daySub'),
-  dayClose: $('#dayClose'),
-  kindHome: $('#kindHome'),
-  kindOuting: $('#kindOuting'),
+  quickHome: $('#quickHome'),
+  quickOuting: $('#quickOuting'),
+  dayEmpty: $('#dayEmpty'),
+  dayEmptyTitle: $('#dayEmptyTitle'),
+  dayEmptySub: $('#dayEmptySub'),
+  addMoreBtn: $('#addMoreBtn'),
   entryForm: $('#entryForm'),
+  formTitle: $('#formTitle'),
   placeField: $('#placeField'),
   placeInput: $('#placeInput'),
   placeOptions: $('#placeOptions'),
@@ -287,7 +292,6 @@ const el = {
   formCancel: $('#formCancel'),
   formSave: $('#formSave'),
   recList: $('#recList'),
-  recCount: $('#recCount'),
 
   backupBackdrop: $('#backupBackdrop'),
   backupClose: $('#backupClose'),
@@ -319,7 +323,7 @@ const el = {
   toast: $('#toast'),
 };
 
-const OVERLAY_IDS = ['dayBackdrop', 'backupBackdrop', 'searchOverlay', 'lightbox', 'dialogBackdrop'];
+const OVERLAY_IDS = ['backupBackdrop', 'searchOverlay', 'lightbox', 'dialogBackdrop'];
 function syncBodyLock() {
   const anyOpen = OVERLAY_IDS.some((id) => {
     const node = document.getElementById(id);
@@ -446,7 +450,9 @@ function renderGrid() {
     if (dow === 0) btn.classList.add('sun');
     if (dow === 6) btn.classList.add('sat');
     if (key === today) btn.classList.add('today');
+    if (key === day.date) btn.classList.add('selected');
     if (photo) btn.classList.add('has-photo');
+    btn.setAttribute('aria-pressed', key === day.date ? 'true' : 'false');
 
     const marks = [];
     if (photo) marks.push('사진');
@@ -486,7 +492,7 @@ function renderGrid() {
       btn.appendChild(badge);
     }
 
-    btn.addEventListener('click', () => openDaySheet(key));
+    btn.addEventListener('click', () => selectDate(key));
     frag.appendChild(btn);
   }
 
@@ -505,19 +511,20 @@ el.nextMonth.addEventListener('click', () => {
   renderCalHead();
   loadMonth();
 });
-el.todayBtn.addEventListener('click', () => {
+el.todayBtn.addEventListener('click', async () => {
   const now = new Date();
   view.y = now.getFullYear();
   view.m = now.getMonth();
   renderCalHead();
-  loadMonth();
+  await loadMonth();
+  await selectDate(todayKey(), { scroll: true });
 });
 
 /* ---------------------------------------------------------
-   그날의 기록 시트
+   달력 아래: 선택한 날의 발자국 카드
    --------------------------------------------------------- */
-const sheet = {
-  date: null,
+const day = {
+  date: todayKey(),
   entries: [],
   photos: [],
   formMode: null,     // 'home' | 'outing' | null
@@ -529,6 +536,8 @@ const sheet = {
   chipPrefs: { hidden: [], custom: [] },
   chipEditing: false,
   busy: false,
+  dismissedCompose: false,
+  seq: 0,
 };
 
 function invalidateEntries() { entriesCache = null; }
@@ -538,82 +547,121 @@ async function getAllEntriesCached() {
   return entriesCache;
 }
 
-async function openDaySheet(date, highlightId = null) {
-  sheet.date = date;
-  sheet.formMode = null;
-  sheet.editingId = null;
-  sheet.pending.forEach((p) => URL.revokeObjectURL(p.url));
-  sheet.pending = [];
-  sheet.kept = [];
-  sheet.removeIds = [];
-  sheet.chipEditing = false;
+const monthPrefix = () => `${view.y}-${pad(view.m + 1)}`;
 
-  await loadSheetData();
-  await loadChips();
-  el.dayBackdrop.hidden = false;
-  syncBodyLock();
-  renderSheet();
-  const body = $('.sheet-body', el.dayBackdrop);
-  if (body) body.scrollTop = 0;
+function shiftKey(key, days) {
+  const { y, m, d } = parseKey(key);
+  const t = new Date(y, m, d + days);
+  return dateKey(t.getFullYear(), t.getMonth(), t.getDate());
+}
 
-  if (highlightId) {
-    requestAnimationFrame(() => {
-      const node = el.recList.querySelector(`.rec[data-id="${CSS.escape(highlightId)}"]`);
-      if (node) {
-        node.classList.add('flash');
-        node.scrollIntoView({ block: 'center' });
-      }
-    });
+function relLabel(key) {
+  const t = todayKey();
+  if (key === t) return '오늘';
+  if (key === shiftKey(t, -1)) return '어제';
+  if (key === shiftKey(t, 1)) return '내일';
+  return '';
+}
+
+async function selectDate(key, opts = {}) {
+  const changed = day.date !== key;
+  if (changed) {
+    day.date = key;
+    resetFormState();
+    day.dismissedCompose = false;
   }
+  const hadFocus = el.dayGrid.contains(document.activeElement);
+  renderGrid();
+  if (hadFocus) {
+    const btn = el.dayGrid.querySelector('.day.selected');
+    if (btn) btn.focus({ preventScroll: true });
+  }
+  await loadDay();
+  if (opts.highlightId) flashRecord(opts.highlightId);
+  if (opts.scroll) scrollDayIntoView();
 }
 
-async function loadSheetData() {
-  const [es, ps] = await Promise.all([entriesForDate(sheet.date), photosForDate(sheet.date)]);
-  sheet.entries = es.sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')));
-  sheet.photos = ps;
+function scrollDayIntoView() {
+  requestAnimationFrame(() => {
+    el.dayCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
 }
 
-function closeDaySheet() {
-  sheet.pending.forEach((p) => URL.revokeObjectURL(p.url));
-  sheet.pending = [];
-  el.dayBackdrop.hidden = true;
-  syncBodyLock();
+function flashRecord(entryId) {
+  requestAnimationFrame(() => {
+    const node = el.recList.querySelector(`.rec[data-id="${CSS.escape(entryId)}"]`);
+    if (!node) return;
+    node.classList.add('flash');
+    node.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  });
 }
 
-el.dayClose.addEventListener('click', closeDaySheet);
-el.dayBackdrop.addEventListener('click', (ev) => { if (ev.target === el.dayBackdrop) closeDaySheet(); });
+async function loadDay() {
+  const seq = ++day.seq;
+  const [es, ps] = await Promise.all([entriesForDate(day.date), photosForDate(day.date)]);
+  if (seq !== day.seq) return; // 다른 날짜로 빠르게 옮긴 경우 무시
+  day.entries = es.sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')));
+  day.photos = ps;
 
-function renderSheet() {
-  const { y, m, d } = parseKey(sheet.date);
-  el.dayTitle.textContent = `${m + 1}월 ${d}일 (${WEEKDAY[dowOf(sheet.date)]})`;
-  const isToday = sheet.date === todayKey();
-  el.daySub.textContent = isToday ? '오늘' : (y !== new Date().getFullYear() ? `${y}년` : '');
-  el.kindHome.classList.toggle('active', sheet.formMode === 'home');
-  el.kindOuting.classList.toggle('active', sheet.formMode === 'outing');
-  el.entryForm.hidden = !sheet.formMode;
-  el.placeField.hidden = sheet.formMode !== 'outing';
-  el.photoField.hidden = sheet.formMode !== 'outing';
+  // 기록이 없는 날은 달력 아래에서 바로 적을 수 있게 입력칸을 펼쳐 둔다
+  if (!day.entries.length && !day.formMode && !day.dismissedCompose) {
+    await startForm('home', null, { auto: true });
+    return;
+  }
+  renderDay();
+}
+
+function renderDay() {
+  const key = day.date;
+  const { y, m, d } = parseKey(key);
+  const rel = relLabel(key);
+  el.dayTitle.textContent = `${m + 1}월 ${d}일 (${WEEKDAY[dowOf(key)]})`;
+  el.dayPill.textContent = rel || (y !== new Date().getFullYear() ? `${y}년` : '');
+  el.dayPill.hidden = !el.dayPill.textContent;
+  el.dayPill.classList.toggle('is-rel', !!rel);
+
+  const photoCount = day.photos.length;
+  el.daySub.textContent = day.entries.length
+    ? `기록 ${day.entries.length}개${photoCount ? ` · 사진 ${photoCount}장` : ''}`
+    : '';
+
+  el.quickHome.classList.toggle('active', day.formMode === 'home');
+  el.quickOuting.classList.toggle('active', day.formMode === 'outing');
+  el.quickHome.setAttribute('aria-pressed', String(day.formMode === 'home'));
+  el.quickOuting.setAttribute('aria-pressed', String(day.formMode === 'outing'));
+
+  el.entryForm.hidden = !day.formMode;
+  el.placeField.hidden = day.formMode !== 'outing';
+  el.photoField.hidden = day.formMode !== 'outing';
+
+  const isEmpty = day.entries.length === 0;
+  el.dayEmpty.hidden = !isEmpty;
+  if (isEmpty) {
+    el.dayEmptyTitle.textContent = rel === '오늘' ? '아직 오늘의 발자국이 없어요' : '아직 이 날의 발자국이 없어요';
+    if (day.formMode === 'outing') {
+      el.dayEmptySub.textContent = '장소와 사진, 내용을 남겨 보세요';
+    } else if (day.formMode === 'home') {
+      el.dayEmptySub.textContent = '집에서 있었던 일을 적고 저장해 보세요';
+    } else {
+      el.dayEmptySub.textContent = '🏠 집이나 📍 외출을 눌러 남겨 보세요';
+    }
+  }
+
   renderRecords();
+  el.recList.hidden = isEmpty;
+  el.addMoreBtn.hidden = isEmpty || !!day.formMode;
 }
 
 /* ---------- 기록 목록 ---------- */
 function photosOfEntry(entryId) {
-  return sheet.photos.filter((p) => p.entryId === entryId);
+  return day.photos.filter((p) => p.entryId === entryId);
 }
 
 function renderRecords() {
   el.recList.replaceChildren();
-  if (!sheet.entries.length) {
-    const li = document.createElement('li');
-    li.className = 'empty';
-    li.innerHTML = '아직 기록이 없어요.<br>위에서 <b>집</b>이나 <b>외출</b>을 눌러 남겨 보세요.';
-    el.recList.appendChild(li);
-    el.recCount.textContent = '';
-    return;
-  }
-  el.recCount.textContent = `${sheet.entries.length}개`;
+  if (!day.entries.length) return;
 
-  for (const entry of sheet.entries) {
+  for (const entry of day.entries) {
     const li = document.createElement('li');
     li.className = 'rec';
     li.dataset.id = entry.id;
@@ -652,8 +700,7 @@ function renderRecords() {
     if (!photos.length) photoWrap.remove();
 
     li.querySelector('[data-act="edit"]').addEventListener('click', () => {
-      startForm(entry.kind, entry);
-      el.entryForm.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      startForm(entry.kind, entry, { scroll: true });
     });
     li.querySelector('[data-act="del"]').addEventListener('click', () => removeRecord(entry));
 
@@ -665,82 +712,103 @@ async function removeRecord(entry) {
   const what = entry.kind === 'home' ? '집 기록' : `'${entry.place || '외출'}' 기록`;
   const ok = await askConfirm(`${what}을(를) 삭제할까요?\n사진도 함께 지워져요.`);
   if (!ok) return;
-  if (sheet.editingId === entry.id) resetForm();
+  if (day.editingId === entry.id) resetFormState();
   photosOfEntry(entry.id).forEach((p) => dropPhotoUrl(p.id));
   await deleteEntryCascade(entry.id);
   invalidateEntries();
-  if (entry.date.slice(0, 7) === `${view.y}-${pad(view.m + 1)}`) await loadMonth();
-  await refreshSheet();
+  day.dismissedCompose = true; // 마지막 기록을 지워도 입력칸이 갑자기 열리지 않게
+  if (entry.date.slice(0, 7) === monthPrefix()) await loadMonth();
+  await loadDay();
+  day.dismissedCompose = false;
   toast('삭제했어요');
 }
 
-async function refreshSheet() {
-  await loadSheetData();
-  renderSheet();
-}
-
-/* ---------- 집 / 외출 선택 ---------- */
-el.kindHome.addEventListener('click', () => {
-  if (sheet.formMode) { switchKind('home'); return; }
-  const home = sheet.entries.find((e) => e.kind === 'home');
-  startForm('home', home || null);
+/* ---------- 집 / 외출 빠른 기록 ---------- */
+el.quickHome.addEventListener('click', () => {
+  if (day.formMode === 'home') { closeForm(true); return; }
+  if (day.formMode) { switchKind('home'); return; }
+  startForm('home', day.entries.find((e) => e.kind === 'home') || null);
 });
-el.kindOuting.addEventListener('click', () => {
-  if (sheet.formMode) { switchKind('outing'); return; }
-  startForm('outing', null);
+el.quickOuting.addEventListener('click', () => {
+  if (day.formMode === 'outing') { closeForm(true); return; }
+  if (day.formMode) { switchKind('outing'); return; }
+  startForm('outing', null, { focus: true });
+});
+el.addMoreBtn.addEventListener('click', () => {
+  startForm('outing', null, { focus: true });
 });
 
 // 폼을 쓰는 중에 집/외출을 바꾸면, 쓰던 내용은 두고 종류만 바꾼다
 function switchKind(kind) {
-  if (sheet.formMode === kind) return;
-  sheet.formMode = kind;
-  el.formSave.textContent = sheet.editingId ? '수정 완료' : '저장';
-  renderSheet();
+  if (day.formMode === kind) return;
+  day.formMode = kind;
+  el.formSave.textContent = day.editingId ? '수정 완료' : '저장';
+  renderDay();
+  if (kind === 'outing') el.placeInput.focus();
+  else el.noteInput.focus();
 }
 
-function startForm(kind, entry) {
-  sheet.formMode = kind;
-  sheet.editingId = entry ? entry.id : null;
-  sheet.pending.forEach((p) => URL.revokeObjectURL(p.url));
-  sheet.pending = [];
-  sheet.removeIds = [];
-  sheet.kept = entry ? photosOfEntry(entry.id) : [];
+async function startForm(kind, entry, opts = {}) {
+  day.formMode = kind;
+  day.editingId = entry ? entry.id : null;
+  day.dismissedCompose = false;
+  day.pending.forEach((p) => URL.revokeObjectURL(p.url));
+  day.pending = [];
+  day.removeIds = [];
+  day.kept = entry ? photosOfEntry(entry.id) : [];
 
   el.placeInput.value = entry && entry.kind === 'outing' ? (entry.place || '') : '';
   el.noteInput.value = entry ? (entry.note || '') : '';
   el.formSave.textContent = entry ? '수정 완료' : '저장';
   el.formSave.disabled = false;
+  el.formTitle.hidden = !entry;
+  if (entry) {
+    el.formTitle.textContent = entry.kind === 'home'
+      ? '🏠 집 기록 수정'
+      : `📍 ${entry.place || '외출'} 수정`;
+  }
 
   el.photoRow.replaceChildren();
   renderPhotoPreviews();
-  renderChips();
   el.chipEditor.hidden = true;
-  sheet.chipEditing = false;
+  day.chipEditing = false;
   el.chipEditBtn.textContent = '장소 편집';
-  renderSheet();
+  renderDay();
+
+  await loadChips();
+
+  if (opts.focus) (kind === 'outing' ? el.placeInput : el.noteInput).focus();
+  if (opts.scroll) el.entryForm.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
 }
 
-function resetForm() {
-  sheet.formMode = null;
-  sheet.editingId = null;
-  sheet.pending.forEach((p) => URL.revokeObjectURL(p.url));
-  sheet.pending = [];
-  sheet.kept = [];
-  sheet.removeIds = [];
+function resetFormState() {
+  day.formMode = null;
+  day.editingId = null;
+  day.pending.forEach((p) => URL.revokeObjectURL(p.url));
+  day.pending = [];
+  day.kept = [];
+  day.removeIds = [];
   el.entryForm.reset();
   el.photoRow.replaceChildren();
-  sheet.chipEditing = false;
+  el.formTitle.hidden = true;
+  el.formTitle.textContent = '';
+  day.chipEditing = false;
   el.chipEditor.hidden = true;
   el.chipEditBtn.textContent = '장소 편집';
-  renderSheet();
 }
 
-el.formCancel.addEventListener('click', resetForm);
+function closeForm(markDismissed = false) {
+  resetFormState();
+  if (markDismissed && !day.entries.length) day.dismissedCompose = true;
+  renderDay();
+}
+
+el.formCancel.addEventListener('click', () => closeForm(true));
 
 /* ---------- 자주 가는 장소 칩 ---------- */
 async function loadChips() {
   const prefs = await getSetting('chipPrefs', { hidden: [], custom: [] });
-  sheet.chipPrefs = {
+  day.chipPrefs = {
     hidden: Array.isArray(prefs.hidden) ? prefs.hidden : [],
     custom: Array.isArray(prefs.custom) ? prefs.custom : [],
   };
@@ -755,19 +823,19 @@ async function loadChips() {
     const name = String(p || '').trim();
     if (!name) return;
     if (list.includes(name)) return;
-    if (sheet.chipPrefs.hidden.includes(name)) return;
+    if (day.chipPrefs.hidden.includes(name)) return;
     list.push(name);
   };
   DEFAULT_PLACES.forEach(push);
   frequent.forEach(push);
-  sheet.chipPrefs.custom.forEach(push);
+  day.chipPrefs.custom.forEach(push);
   // 지금 입력된 장소가 목록에 없으면 앞에 보여 준다
   const typed = el.placeInput.value.trim();
   if (typed && !list.includes(typed)) list.unshift(typed);
-  sheet.chips = list.slice(0, 14);
+  day.chips = list.slice(0, 14);
   renderChips();
   el.placeOptions.replaceChildren();
-  for (const name of sheet.chips) {
+  for (const name of day.chips) {
     const opt = document.createElement('option');
     opt.value = name;
     el.placeOptions.appendChild(opt);
@@ -777,12 +845,12 @@ async function loadChips() {
 function renderChips() {
   el.placeChips.replaceChildren();
   const typed = el.placeInput.value.trim();
-  for (const name of sheet.chips) {
+  for (const name of day.chips) {
     const chip = document.createElement('button');
     chip.type = 'button';
     chip.className = 'chip' + (typed === name ? ' on' : '');
     chip.dataset.place = name;
-    if (sheet.chipEditing) {
+    if (day.chipEditing) {
       chip.innerHTML = `${esc(name)}<span class="chip-x" aria-hidden="true">✕</span>`;
       chip.title = '이 장소를 칩에서 빼기';
       chip.addEventListener('click', (ev) => {
@@ -801,19 +869,19 @@ function renderChips() {
 }
 
 async function hideChip(name) {
-  if (!sheet.chipPrefs.hidden.includes(name)) sheet.chipPrefs.hidden.push(name);
-  sheet.chipPrefs.custom = sheet.chipPrefs.custom.filter((c) => c !== name);
-  await setSetting('chipPrefs', sheet.chipPrefs);
-  sheet.chips = sheet.chips.filter((c) => c !== name);
+  if (!day.chipPrefs.hidden.includes(name)) day.chipPrefs.hidden.push(name);
+  day.chipPrefs.custom = day.chipPrefs.custom.filter((c) => c !== name);
+  await setSetting('chipPrefs', day.chipPrefs);
+  day.chips = day.chips.filter((c) => c !== name);
   renderChips();
 }
 
 el.chipEditBtn.addEventListener('click', () => {
-  sheet.chipEditing = !sheet.chipEditing;
-  el.chipEditor.hidden = !sheet.chipEditing;
-  el.chipEditBtn.textContent = sheet.chipEditing ? '편집 끝내기' : '장소 편집';
+  day.chipEditing = !day.chipEditing;
+  el.chipEditor.hidden = !day.chipEditing;
+  el.chipEditBtn.textContent = day.chipEditing ? '편집 끝내기' : '장소 편집';
   renderChips();
-  if (sheet.chipEditing) el.chipNewInput.focus();
+  if (day.chipEditing) el.chipNewInput.focus();
 });
 
 el.chipAddBtn.addEventListener('click', addChip);
@@ -824,9 +892,9 @@ el.chipNewInput.addEventListener('keydown', (ev) => {
 async function addChip() {
   const name = el.chipNewInput.value.trim();
   if (!name) return;
-  if (!sheet.chipPrefs.custom.includes(name)) sheet.chipPrefs.custom.push(name);
-  sheet.chipPrefs.hidden = sheet.chipPrefs.hidden.filter((h) => h !== name);
-  await setSetting('chipPrefs', sheet.chipPrefs);
+  if (!day.chipPrefs.custom.includes(name)) day.chipPrefs.custom.push(name);
+  day.chipPrefs.hidden = day.chipPrefs.hidden.filter((h) => h !== name);
+  await setSetting('chipPrefs', day.chipPrefs);
   el.chipNewInput.value = '';
   await loadChips();
   el.placeInput.value = name;
@@ -848,7 +916,7 @@ el.albumInput.addEventListener('change', async () => {
 });
 
 function setPhotoBusy(busy, label) {
-  sheet.busy = busy;
+  day.busy = busy;
   [el.cameraBtn, el.albumBtn].forEach((b) => { b.disabled = busy; });
   if (busy) {
     el.albumBtn.dataset.label = el.albumBtn.textContent;
@@ -860,10 +928,10 @@ function setPhotoBusy(busy, label) {
 }
 
 async function handleFiles(trigger, fileList) {
-  if (sheet.busy) return;
+  if (day.busy) return;
   const files = Array.from(fileList || []);
   if (!files.length) return;
-  const room = MAX_PHOTOS - sheet.pending.length - sheet.kept.length;
+  const room = MAX_PHOTOS - day.pending.length - day.kept.length;
   if (room <= 0) {
     toast(`사진은 한 기록에 ${MAX_PHOTOS}장까지 넣을 수 있어요`);
     return;
@@ -874,7 +942,7 @@ async function handleFiles(trigger, fileList) {
   for (const file of take) {
     try {
       const c = await compressImage(file);
-      sheet.pending.push({ ...c, url: URL.createObjectURL(c.full) });
+      day.pending.push({ ...c, url: URL.createObjectURL(c.full) });
     } catch (err) {
       toast('이 사진은 불러올 수 없어요. 다른 사진으로 해보세요');
     }
@@ -901,17 +969,17 @@ function renderPhotoPreviews() {
     wrap.appendChild(rm);
     el.photoRow.appendChild(wrap);
   };
-  for (const p of sheet.kept) {
+  for (const p of day.kept) {
     add(thumbUrl(p), () => {
-      sheet.kept = sheet.kept.filter((x) => x.id !== p.id);
-      sheet.removeIds.push(p.id);
+      day.kept = day.kept.filter((x) => x.id !== p.id);
+      day.removeIds.push(p.id);
       renderPhotoPreviews();
     });
   }
-  sheet.pending.forEach((p, idx) => {
+  day.pending.forEach((p, idx) => {
     add(p.url, () => {
       URL.revokeObjectURL(p.url);
-      sheet.pending.splice(idx, 1);
+      day.pending.splice(idx, 1);
       renderPhotoPreviews();
     });
   });
@@ -920,8 +988,8 @@ function renderPhotoPreviews() {
 /* ---------- 저장 / 수정 ---------- */
 el.entryForm.addEventListener('submit', async (ev) => {
   ev.preventDefault();
-  if (!sheet.formMode || sheet.busy) return;
-  const kind = sheet.formMode;
+  if (!day.formMode || day.busy) return;
+  const kind = day.formMode;
   const place = el.placeInput.value.trim();
   const note = el.noteInput.value.trim();
 
@@ -931,7 +999,7 @@ el.entryForm.addEventListener('submit', async (ev) => {
     return;
   }
   if (kind === 'home' && !note) {
-    toast('오늘 집에서 있었던 일을 적어 주세요');
+    toast('집에서 있었던 일을 적어 주세요');
     el.noteInput.focus();
     return;
   }
@@ -940,12 +1008,12 @@ el.entryForm.addEventListener('submit', async (ev) => {
   el.formSave.textContent = '저장 중…';
   try {
     const now = new Date().toISOString();
-    const existing = sheet.editingId ? sheet.entries.find((x) => x.id === sheet.editingId) : null;
+    const existing = day.editingId ? day.entries.find((x) => x.id === day.editingId) : null;
     const entry = existing
       ? { ...existing, kind, place: kind === 'outing' ? place : '', note, updatedAt: now }
       : {
         id: uid(),
-        date: sheet.date,
+        date: day.date,
         kind,
         place: kind === 'outing' ? place : '',
         note,
@@ -956,21 +1024,21 @@ el.entryForm.addEventListener('submit', async (ev) => {
 
     if (kind === 'home') {
       // 집 기록은 사진 없이 내용만 남긴다
-      sheet.pending.forEach((p) => URL.revokeObjectURL(p.url));
-      sheet.pending = [];
-      for (const kept of sheet.kept) sheet.removeIds.push(kept.id);
-      sheet.kept = [];
+      day.pending.forEach((p) => URL.revokeObjectURL(p.url));
+      day.pending = [];
+      for (const kept of day.kept) day.removeIds.push(kept.id);
+      day.kept = [];
     }
 
-    if (sheet.removeIds.length) {
-      for (const id2 of sheet.removeIds) dropPhotoUrl(id2);
-      await Promise.all(sheet.removeIds.map((id2) => deletePhotoById(id2)));
+    if (day.removeIds.length) {
+      for (const id2 of day.removeIds) dropPhotoUrl(id2);
+      await Promise.all(day.removeIds.map((id2) => deletePhotoById(id2)));
     }
-    if (sheet.pending.length) {
-      const pics = sheet.pending.map((p) => ({
+    if (day.pending.length) {
+      const pics = day.pending.map((p) => ({
         id: uid(),
         entryId: entry.id,
-        date: sheet.date,
+        date: day.date,
         full: p.full,
         thumb: p.thumb,
         w: p.w,
@@ -978,22 +1046,22 @@ el.entryForm.addEventListener('submit', async (ev) => {
         createdAt: now,
       }));
       await putPhotos(pics);
-      sheet.pending.forEach((p) => URL.revokeObjectURL(p.url));
-      sheet.pending = [];
+      day.pending.forEach((p) => URL.revokeObjectURL(p.url));
+      day.pending = [];
     }
-    sheet.removeIds = [];
+    day.removeIds = [];
     invalidateEntries();
 
     const edited = !!existing;
-    await refreshSheet();
-    resetForm();
-    if (sheet.date.slice(0, 7) === `${view.y}-${pad(view.m + 1)}`) await loadMonth();
+    resetFormState();
+    if (day.date.slice(0, 7) === monthPrefix()) await loadMonth();
+    await loadDay();
     toast(edited ? '수정했어요' : '저장했어요');
   } catch (err) {
     console.error(err);
     toast('저장하지 못했어요. 잠시 뒤 다시 해보세요');
     el.formSave.disabled = false;
-    el.formSave.textContent = sheet.editingId ? '수정 완료' : '저장';
+    el.formSave.textContent = day.editingId ? '수정 완료' : '저장';
   }
 });
 
@@ -1165,7 +1233,7 @@ async function gotoEntry(date, entryId) {
   view.m = m;
   renderCalHead();
   await loadMonth();
-  await openDaySheet(date, entryId);
+  await selectDate(date, { highlightId: entryId, scroll: true });
 }
 
 /* ---------------------------------------------------------
@@ -1354,7 +1422,7 @@ async function importBackup(file) {
     fullCache.clear();
     invalidateEntries();
     await loadMonth();
-    if (!el.dayBackdrop.hidden) await refreshSheet();
+    await loadDay();
     await refreshStorageInfo();
     toast(`기록 ${entryCount}개, 사진 ${photoCount}장을 불러왔어요`);
   } catch (err) {
@@ -1374,7 +1442,6 @@ document.addEventListener('keydown', (ev) => {
   if (!el.dialogBackdrop.hidden) return; // 확인 대화상자가 직접 처리
   if (!el.lightbox.hidden) { closeLightbox(); return; }
   if (!el.searchOverlay.hidden) { closeSearch(); return; }
-  if (!el.dayBackdrop.hidden) { closeDaySheet(); return; }
   if (!el.backupBackdrop.hidden) { closeBackup(); return; }
 });
 
@@ -1392,6 +1459,7 @@ async function init() {
       navigator.storage.persist().catch(() => {});
     }
     await loadMonth();
+    await loadDay();
   } catch (err) {
     console.error(err);
     toast('저장 공간을 열지 못했어요. 사파리 설정을 확인해 주세요');
