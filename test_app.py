@@ -169,6 +169,29 @@ with sync_playwright() as pw:
     check('기록 없는 날짜 셀에 아이콘 없음',
           page.evaluate("() => document.querySelectorAll('.day .mark, .day img.thumb').length") == 0)
 
+    # --- 월 이동
+    title_now = page.locator('#calTitle').inner_text()
+    page.click('#prevMonth')
+    page.wait_for_timeout(400)
+    prev_title = page.locator('#calTitle').inner_text()
+    check('‹ 이전 달로 이동', prev_title != title_now, (title_now, prev_title))
+    check('이전 달에도 날짜 칸 채워짐', page.locator('.days .day').count() >= 28)
+    page.click('#nextMonth')
+    page.wait_for_timeout(400)
+    check('› 다음 달로 복귀', page.locator('#calTitle').inner_text() == title_now)
+    page.click('#nextMonth')
+    page.wait_for_timeout(400)
+    next_title = page.locator('#calTitle').inner_text()
+    check('› 다음 달 표시', next_title != title_now, next_title)
+    page.click('#prevMonth')
+    page.wait_for_timeout(400)
+    check('한 바퀴 돌아 이번 달', page.locator('#calTitle').inner_text() == title_now,
+          page.locator('#calTitle').inner_text())
+    page.click('#todayBtn')
+    page.wait_for_timeout(400)
+    check('오늘 버튼으로 이번 달', page.locator('#calTitle').inner_text() == title_now)
+    check('월 이동 후 가로 넘침 없음', overflow(page) <= 0, overflow(page))
+
     # --- 🏠 집 기록 저장
     page.click(f'.day[data-date="{day}"]')
     page.wait_for_selector('#dayBackdrop:not([hidden])')
