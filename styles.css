@@ -434,46 +434,57 @@ svg { display: block; }
 .field input[type="text"]::placeholder,
 .field textarea::placeholder { color: var(--sub-2); }
 .field input[type="text"]:focus,
-.field textarea:focus {
+.field textarea:focus,
+.field input[type="time"]:focus {
   border-color: var(--blue);
   box-shadow: 0 0 0 3px rgba(49, 130, 246, .12);
 }
 .field textarea { resize: none; line-height: 1.5; }
+
+/* 시간(선택) — 라벨과 입력칸을 한 줄에 둬서 카드가 길어지지 않게 */
+.field-inline {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.field-inline > label {
+  display: block;
+  flex: none;
+  margin-bottom: 0;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--sub);
+}
+.field-inline > label .opt { color: var(--sub-2); font-weight: 500; }
+.time-wrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+}
+.time-wrap .link-btn { flex: none; padding: 4px 0; }
+.field input[type="time"] {
+  width: 124px;
+  height: 38px;
+  padding: 0 8px;
+  background: #fff;
+  border: 1px solid var(--line-2);
+  border-radius: 11px;
+  font-size: 14.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  outline: none;
+  transition: border-color .15s, box-shadow .15s;
+}
 .field-hint {
   margin-top: 6px;
   font-size: 11.5px;
   color: var(--sub-2);
 }
 
-.chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 8px;
-}
-.chip {
-  height: 30px;
-  padding: 0 12px;
-  border-radius: 15px;
-  background: #fff;
-  border: 1px solid var(--line-2);
-  color: #4E5968;
-  font-size: 13px;
-  font-weight: 500;
-  transition: background .12s, border-color .12s, color .12s;
-}
-.chip.on {
-  background: var(--blue-weak);
-  border-color: rgba(49, 130, 246, .5);
-  color: var(--blue);
-  font-weight: 700;
-}
-.chip .chip-x {
-  margin-left: 5px;
-  color: var(--sub-2);
-  font-weight: 700;
-}
-.chip-tools { margin-top: 8px; }
+/* ---------- 링크형 버튼 ---------- */
 .link-btn {
   font-size: 12.5px;
   font-weight: 600;
@@ -481,34 +492,6 @@ svg { display: block; }
   padding: 2px 0;
 }
 .link-btn.danger { color: var(--red); }
-.chip-editor {
-  display: flex;
-  gap: 6px;
-  margin-top: 8px;
-}
-.chip-editor input {
-  flex: 1;
-  min-width: 0;
-  height: 38px;
-  border: 1px solid var(--line-2);
-  border-radius: 10px;
-  background: #fff;
-  padding: 0 10px;
-  font-size: 14px;
-  outline: none;
-}
-.chip-editor input:focus { border-color: var(--blue); }
-.chip-add {
-  height: 38px;
-  padding: 0 14px;
-  border-radius: 10px;
-  background: #F2F4F6;
-  color: #333D4B;
-  font-size: 13.5px;
-  font-weight: 700;
-  flex: none;
-}
-
 .photo-row {
   display: flex;
   flex-wrap: wrap;
@@ -629,9 +612,43 @@ svg { display: block; }
   border-radius: 7px;
   font-size: 12.5px;
   font-weight: 700;
+  flex: 0 1 auto;
+  min-width: 0;
 }
 .rec-badge.home { background: #FFF3E0; color: #9A6320; }
-.rec-badge.outing { background: var(--blue-weak); color: var(--blue-press); max-width: 70%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rec-badge.outing { background: var(--blue-weak); color: var(--blue-press); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rec-time {
+  flex: none;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--sub);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.rec-order {
+  display: flex;
+  gap: 4px;
+  margin-left: auto;
+  flex: none;
+}
+.ord-btn {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 9px;
+  background: #F2F4F6;
+  color: #4E5968;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1;
+  touch-action: manipulation;
+  -webkit-user-select: none;
+  user-select: none;
+  transition: background .12s, opacity .12s;
+}
+.ord-btn:active:not(:disabled) { background: #E5E8EB; }
+.ord-btn:disabled { opacity: .3; cursor: default; }
 .rec-note {
   font-size: 14px;
   color: #333D4B;

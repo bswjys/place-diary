@@ -13,7 +13,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="발자국">
-<link rel="stylesheet" href="./styles.css?v=2">
+<link rel="stylesheet" href="./styles.css?v=3">
 </head>
 <body>
 <div class="app">
@@ -78,16 +78,7 @@
         <p class="form-title" id="formTitle" hidden></p>
         <div class="field" id="placeField">
           <label for="placeInput">장소</label>
-          <input id="placeInput" type="text" list="placeOptions" placeholder="예: 연남동 카페" autocomplete="off" enterkeyhint="done">
-          <datalist id="placeOptions"></datalist>
-          <div class="chips" id="placeChips"></div>
-          <div class="chip-tools">
-            <button type="button" class="link-btn" id="chipEditBtn">장소 편집</button>
-            <div class="chip-editor" id="chipEditor" hidden>
-              <input id="chipNewInput" type="text" placeholder="자주 가는 장소 추가" autocomplete="off">
-              <button type="button" class="chip-add" id="chipAddBtn">추가</button>
-            </div>
-          </div>
+          <input id="placeInput" type="text" placeholder="예: 연남동 카페" autocomplete="off" enterkeyhint="done">
         </div>
 
         <div class="field" id="photoField">
@@ -105,6 +96,14 @@
         <div class="field">
           <label for="noteInput">내용</label>
           <textarea id="noteInput" rows="3" placeholder="오늘 있었던 일을 적어 보세요"></textarea>
+        </div>
+
+        <div class="field field-inline" id="timeField">
+          <label for="timeInput">시간 <span class="opt">선택</span></label>
+          <div class="time-wrap">
+            <button type="button" class="link-btn" id="timeNowBtn">지금</button>
+            <input id="timeInput" type="time" step="60" aria-label="시간 (선택)">
+          </div>
         </div>
 
         <div class="form-actions">
@@ -186,6 +185,6 @@
 
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
-<script src="./app.js?v=2"></script>
+<script src="./app.js?v=3"></script>
 </body>
 </html>

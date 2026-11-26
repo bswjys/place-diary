@@ -12,7 +12,6 @@ const FULL_MAX = 1200;
 const FULL_QUALITY = 0.82;
 const THUMB_SIZE = 160;
 const THUMB_QUALITY = 0.78;
-const DEFAULT_PLACES = ['교회', '카페', '장신대', '마트', '산책'];
 
 const pad = (n) => String(n).padStart(2, '0');
 const ESC_MAP = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
@@ -55,6 +54,43 @@ function labelOf(k) {
 function todayKey() {
   const now = new Date();
   return dateKey(now.getFullYear(), now.getMonth(), now.getDate());
+}
+
+/* ---------------------------------------------------------
+   시간 (기록에 선택으로 남기는 시각)
+   저장은 'HH:MM', 화면에는 '오전 11:30' 처럼 보여 준다
+   --------------------------------------------------------- */
+const TIME_RE = /^([01]?\d|2[0-3]):([0-5]\d)$/;
+function normTime(v) {
+  const s = String(v == null ? '' : v).trim();
+  const m = s.match(TIME_RE);
+  if (!m) return '';
+  return `${pad(Number(m[1]))}:${m[2]}`;
+}
+function fmtTime(v) {
+  const t = normTime(v);
+  if (!t) return '';
+  const h = Number(t.slice(0, 2));
+  const ap = h < 12 ? '오전' : '오후';
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  return `${ap} ${h12}:${t.slice(3, 5)}`;
+}
+function nowTime() {
+  const now = new Date();
+  return `${pad(now.getHours())}:${pad(now.getMinutes())}`;
+}
+
+/* 하루 안에서의 순서: order(0부터) → 없으면 만든 시각 순 (v2 기록과 호환) */
+function orderedEntries(list) {
+  return list.slice().sort((a, b) => {
+    const ao = Number.isFinite(a.order) ? a.order : Number.MAX_SAFE_INTEGER;
+    const bo = Number.isFinite(b.order) ? b.order : Number.MAX_SAFE_INTEGER;
+    if (ao !== bo) return ao - bo;
+    return String(a.createdAt || '').localeCompare(String(b.createdAt || ''));
+  });
+}
+function nextOrder(list) {
+  return list.reduce((mx, e) => (Number.isFinite(e.order) ? Math.max(mx, e.order + 1) : mx), list.length);
 }
 
 /* ---------------------------------------------------------
@@ -157,12 +193,6 @@ async function deleteEntryCascade(entryId) {
   const tx = db.transaction('entries', 'readwrite');
   tx.objectStore('entries').delete(entryId);
   await txDone(tx);
-}
-
-async function getSetting(key, fallback = null) {
-  const db = await openDB();
-  const row = await reqP(db.transaction('settings').objectStore('settings').get(key));
-  return row ? row.value : fallback;
 }
 
 async function setSetting(key, value) {
@@ -276,12 +306,9 @@ const el = {
   formTitle: $('#formTitle'),
   placeField: $('#placeField'),
   placeInput: $('#placeInput'),
-  placeOptions: $('#placeOptions'),
-  placeChips: $('#placeChips'),
-  chipEditBtn: $('#chipEditBtn'),
-  chipEditor: $('#chipEditor'),
-  chipNewInput: $('#chipNewInput'),
-  chipAddBtn: $('#chipAddBtn'),
+  timeField: $('#timeField'),
+  timeInput: $('#timeInput'),
+  timeNowBtn: $('#timeNowBtn'),
   photoField: $('#photoField'),
   photoRow: $('#photoRow'),
   cameraBtn: $('#cameraBtn'),
@@ -532,9 +559,6 @@ const day = {
   pending: [],        // 새로 추가한 사진 {full, thumb, url}
   kept: [],           // 수정 시 유지할 기존 사진
   removeIds: [],      // 수정 시 지울 사진 id
-  chips: [],
-  chipPrefs: { hidden: [], custom: [] },
-  chipEditing: false,
   busy: false,
   dismissedCompose: false,
   seq: 0,
@@ -600,7 +624,19 @@ async function loadDay() {
   const seq = ++day.seq;
   const [es, ps] = await Promise.all([entriesForDate(day.date), photosForDate(day.date)]);
   if (seq !== day.seq) return; // 다른 날짜로 빠르게 옮긴 경우 무시
-  day.entries = es.sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')));
+  const fixed = orderedEntries(es);
+  // order가 없는 v2 기록이나 지운 기록 뒤의 빈 번호는 0,1,2… 로 정리해 다시 저장한다
+  let dirty = false;
+  day.entries = fixed.map((e, i) => {
+    if (e.order === i) return e;
+    dirty = true;
+    return { ...e, order: i };
+  });
+  if (dirty) {
+    await putEntries(day.entries);
+    if (seq !== day.seq) return;
+    invalidateEntries();
+  }
   day.photos = ps;
 
   // 기록이 없는 날은 달력 아래에서 바로 적을 수 있게 입력칸을 펼쳐 둔다
@@ -660,8 +696,9 @@ function photosOfEntry(entryId) {
 function renderRecords() {
   el.recList.replaceChildren();
   if (!day.entries.length) return;
+  const total = day.entries.length;
 
-  for (const entry of day.entries) {
+  day.entries.forEach((entry, idx) => {
     const li = document.createElement('li');
     li.className = 'rec';
     li.dataset.id = entry.id;
@@ -670,12 +707,20 @@ function renderRecords() {
     const badge = entry.kind === 'home'
       ? '<span class="rec-badge home">🏠 집</span>'
       : `<span class="rec-badge outing">📍 ${esc(entry.place || '외출')}</span>`;
+    const timeText = fmtTime(entry.time);
+    const time = timeText ? `<span class="rec-time">${esc(timeText)}</span>` : '';
+    const order = total > 1
+      ? `<div class="rec-order" role="group" aria-label="순서 바꾸기">
+          <button type="button" class="ord-btn" data-act="up" aria-label="위로 올리기"${idx === 0 ? ' disabled' : ''}>↑</button>
+          <button type="button" class="ord-btn" data-act="down" aria-label="아래로 내리기"${idx === total - 1 ? ' disabled' : ''}>↓</button>
+        </div>`
+      : '';
     const note = entry.note
       ? `<p class="rec-note">${esc(entry.note)}</p>`
       : '<p class="rec-note placeholder">내용 없음</p>';
 
     li.innerHTML = `
-      <div class="rec-top">${badge}</div>
+      <div class="rec-top">${badge}${time}${order}</div>
       ${note}
       <div class="rec-photos"></div>
       <div class="rec-actions">
@@ -703,8 +748,42 @@ function renderRecords() {
       startForm(entry.kind, entry, { scroll: true });
     });
     li.querySelector('[data-act="del"]').addEventListener('click', () => removeRecord(entry));
+    const upBtn = li.querySelector('[data-act="up"]');
+    if (upBtn) upBtn.addEventListener('click', () => moveEntry(entry.id, -1));
+    const downBtn = li.querySelector('[data-act="down"]');
+    if (downBtn) downBtn.addEventListener('click', () => moveEntry(entry.id, 1));
 
     el.recList.appendChild(li);
+  });
+}
+
+/* 카드의 ↑ / ↓ — 그 날짜 안에서만 순서를 바꾸고 바로 저장한다 */
+let moving = false;
+async function moveEntry(entryId, dir) {
+  if (moving) return;
+  const idx = day.entries.findIndex((e) => e.id === entryId);
+  const to = idx + dir;
+  if (idx < 0 || to < 0 || to >= day.entries.length) return;
+  moving = true;
+  try {
+    const next = day.entries.slice();
+    [next[idx], next[to]] = [next[to], next[idx]];
+    const fixed = next.map((e, i) => (e.order === i ? e : { ...e, order: i }));
+    await putEntries(fixed);
+    day.entries = fixed;
+    invalidateEntries();
+    renderRecords();
+    // 같은 방향을 이어 누를 수 있게 초점을 옮겨 둔다 (맨 위/아래면 반대쪽으로)
+    const li = el.recList.querySelector(`.rec[data-id="${CSS.escape(entryId)}"]`);
+    const keep = li && li.querySelector(`[data-act="${dir < 0 ? 'up' : 'down'}"]`);
+    const other = li && li.querySelector(`[data-act="${dir < 0 ? 'down' : 'up'}"]`);
+    const focusBtn = keep && !keep.disabled ? keep : other;
+    if (focusBtn) focusBtn.focus({ preventScroll: true });
+  } catch (err) {
+    console.error(err);
+    toast('순서를 바꾸지 못했어요. 잠시 뒤 다시 해보세요');
+  } finally {
+    moving = false;
   }
 }
 
@@ -759,6 +838,7 @@ async function startForm(kind, entry, opts = {}) {
 
   el.placeInput.value = entry && entry.kind === 'outing' ? (entry.place || '') : '';
   el.noteInput.value = entry ? (entry.note || '') : '';
+  el.timeInput.value = entry ? normTime(entry.time) : '';
   el.formSave.textContent = entry ? '수정 완료' : '저장';
   el.formSave.disabled = false;
   el.formTitle.hidden = !entry;
@@ -770,12 +850,7 @@ async function startForm(kind, entry, opts = {}) {
 
   el.photoRow.replaceChildren();
   renderPhotoPreviews();
-  el.chipEditor.hidden = true;
-  day.chipEditing = false;
-  el.chipEditBtn.textContent = '장소 편집';
   renderDay();
-
-  await loadChips();
 
   if (opts.focus) (kind === 'outing' ? el.placeInput : el.noteInput).focus();
   if (opts.scroll) el.entryForm.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
@@ -792,9 +867,6 @@ function resetFormState() {
   el.photoRow.replaceChildren();
   el.formTitle.hidden = true;
   el.formTitle.textContent = '';
-  day.chipEditing = false;
-  el.chipEditor.hidden = true;
-  el.chipEditBtn.textContent = '장소 편집';
 }
 
 function closeForm(markDismissed = false) {
@@ -804,104 +876,9 @@ function closeForm(markDismissed = false) {
 }
 
 el.formCancel.addEventListener('click', () => closeForm(true));
-
-/* ---------- 자주 가는 장소 칩 ---------- */
-async function loadChips() {
-  const prefs = await getSetting('chipPrefs', { hidden: [], custom: [] });
-  day.chipPrefs = {
-    hidden: Array.isArray(prefs.hidden) ? prefs.hidden : [],
-    custom: Array.isArray(prefs.custom) ? prefs.custom : [],
-  };
-  const all = await getAllEntriesCached();
-  const counts = new Map();
-  for (const e of all) {
-    if (e.kind === 'outing' && e.place) counts.set(e.place, (counts.get(e.place) || 0) + 1);
-  }
-  const frequent = [...counts.entries()].sort((a, b) => b[1] - a[1]).map((x) => x[0]);
-  const list = [];
-  const push = (p) => {
-    const name = String(p || '').trim();
-    if (!name) return;
-    if (list.includes(name)) return;
-    if (day.chipPrefs.hidden.includes(name)) return;
-    list.push(name);
-  };
-  DEFAULT_PLACES.forEach(push);
-  frequent.forEach(push);
-  day.chipPrefs.custom.forEach(push);
-  // 지금 입력된 장소가 목록에 없으면 앞에 보여 준다
-  const typed = el.placeInput.value.trim();
-  if (typed && !list.includes(typed)) list.unshift(typed);
-  day.chips = list.slice(0, 14);
-  renderChips();
-  el.placeOptions.replaceChildren();
-  for (const name of day.chips) {
-    const opt = document.createElement('option');
-    opt.value = name;
-    el.placeOptions.appendChild(opt);
-  }
-}
-
-function renderChips() {
-  el.placeChips.replaceChildren();
-  const typed = el.placeInput.value.trim();
-  for (const name of day.chips) {
-    const chip = document.createElement('button');
-    chip.type = 'button';
-    chip.className = 'chip' + (typed === name ? ' on' : '');
-    chip.dataset.place = name;
-    if (day.chipEditing) {
-      chip.innerHTML = `${esc(name)}<span class="chip-x" aria-hidden="true">✕</span>`;
-      chip.title = '이 장소를 칩에서 빼기';
-      chip.addEventListener('click', (ev) => {
-        ev.preventDefault();
-        hideChip(name);
-      });
-    } else {
-      chip.textContent = name;
-      chip.addEventListener('click', () => {
-        el.placeInput.value = name;
-        renderChips();
-      });
-    }
-    el.placeChips.appendChild(chip);
-  }
-}
-
-async function hideChip(name) {
-  if (!day.chipPrefs.hidden.includes(name)) day.chipPrefs.hidden.push(name);
-  day.chipPrefs.custom = day.chipPrefs.custom.filter((c) => c !== name);
-  await setSetting('chipPrefs', day.chipPrefs);
-  day.chips = day.chips.filter((c) => c !== name);
-  renderChips();
-}
-
-el.chipEditBtn.addEventListener('click', () => {
-  day.chipEditing = !day.chipEditing;
-  el.chipEditor.hidden = !day.chipEditing;
-  el.chipEditBtn.textContent = day.chipEditing ? '편집 끝내기' : '장소 편집';
-  renderChips();
-  if (day.chipEditing) el.chipNewInput.focus();
+el.timeNowBtn.addEventListener('click', () => {
+  el.timeInput.value = nowTime();
 });
-
-el.chipAddBtn.addEventListener('click', addChip);
-el.chipNewInput.addEventListener('keydown', (ev) => {
-  if (ev.key === 'Enter') { ev.preventDefault(); addChip(); }
-});
-
-async function addChip() {
-  const name = el.chipNewInput.value.trim();
-  if (!name) return;
-  if (!day.chipPrefs.custom.includes(name)) day.chipPrefs.custom.push(name);
-  day.chipPrefs.hidden = day.chipPrefs.hidden.filter((h) => h !== name);
-  await setSetting('chipPrefs', day.chipPrefs);
-  el.chipNewInput.value = '';
-  await loadChips();
-  el.placeInput.value = name;
-  renderChips();
-}
-
-el.placeInput.addEventListener('input', renderChips);
 
 /* ---------- 사진 ---------- */
 el.cameraBtn.addEventListener('click', () => el.cameraInput.click());
@@ -992,6 +969,7 @@ el.entryForm.addEventListener('submit', async (ev) => {
   const kind = day.formMode;
   const place = el.placeInput.value.trim();
   const note = el.noteInput.value.trim();
+  const time = normTime(el.timeInput.value);
 
   if (kind === 'outing' && !place) {
     toast('장소를 입력해 주세요');
@@ -1010,13 +988,15 @@ el.entryForm.addEventListener('submit', async (ev) => {
     const now = new Date().toISOString();
     const existing = day.editingId ? day.entries.find((x) => x.id === day.editingId) : null;
     const entry = existing
-      ? { ...existing, kind, place: kind === 'outing' ? place : '', note, updatedAt: now }
+      ? { ...existing, kind, place: kind === 'outing' ? place : '', note, time, updatedAt: now }
       : {
         id: uid(),
         date: day.date,
         kind,
         place: kind === 'outing' ? place : '',
         note,
+        time,
+        order: nextOrder(day.entries),
         createdAt: now,
         updatedAt: now,
       };
@@ -1153,7 +1133,13 @@ function renderSearch(rawQuery) {
   const ql = q.toLowerCase();
   const hits = all
     .filter((e) => (e.place || '').toLowerCase().includes(ql) || (e.note || '').toLowerCase().includes(ql))
-    .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+    .sort((a, b) => {
+      if (a.date !== b.date) return a.date < b.date ? 1 : -1;
+      const ao = Number.isFinite(a.order) ? a.order : Number.MAX_SAFE_INTEGER;
+      const bo = Number.isFinite(b.order) ? b.order : Number.MAX_SAFE_INTEGER;
+      if (ao !== bo) return ao - bo;
+      return String(a.createdAt || '').localeCompare(String(b.createdAt || ''));
+    });
 
   if (!hits.length) {
     el.searchHint.hidden = false;
@@ -1180,10 +1166,11 @@ function renderSearch(rawQuery) {
     main.className = 'sres-main';
     const placeName = entry.kind === 'home' ? '집' : (entry.place || '외출');
     const noteHtml = entry.note ? highlight(entry.note, q) : '<span style="color:#B0B8C1">내용 없음</span>';
+    const timeText = fmtTime(entry.time);
     main.innerHTML = `
       <div class="sres-top">
         <span class="sres-place">${highlight(placeName, q)}</span>
-        <span class="sres-date">${esc(labelOf(entry.date))}</span>
+        <span class="sres-date">${esc(labelOf(entry.date))}${timeText ? ` · ${esc(timeText)}` : ''}</span>
       </div>
       <p class="sres-note">${noteHtml}</p>`;
     btn.appendChild(main);
@@ -1382,9 +1369,12 @@ async function importBackup(file) {
         kind: entry.kind === 'home' ? 'home' : 'outing',
         place: entry.place || '',
         note: entry.note || '',
+        time: normTime(entry.time),
         createdAt: entry.createdAt || new Date().toISOString(),
         updatedAt: entry.updatedAt || entry.createdAt || new Date().toISOString(),
       };
+      const importedOrder = Number(entry.order);
+      if (Number.isFinite(importedOrder)) clean.order = importedOrder;
       await deletePhotosByEntry(clean.id);
       await putEntries([clean]);
       entryCount++;
