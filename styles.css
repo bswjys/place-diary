@@ -426,8 +426,8 @@ svg { display: block; }
   background: #fff;
   border: 1px solid var(--line-2);
   border-radius: 12px;
-  padding: 11px 12px;
-  font-size: 15px;
+  padding: 10px 12px;
+  font-size: 16px;
   outline: none;
   transition: border-color .15s, box-shadow .15s;
 }
@@ -471,7 +471,7 @@ svg { display: block; }
   background: #fff;
   border: 1px solid var(--line-2);
   border-radius: 11px;
-  font-size: 14.5px;
+  font-size: 16px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   text-align: center;
@@ -764,7 +764,7 @@ svg { display: block; }
   border-radius: 12px;
   background: #F2F4F6;
   padding: 0 13px;
-  font-size: 15px;
+  font-size: 16px;
   outline: none;
   -webkit-appearance: none;
 }
@@ -968,3 +968,16 @@ mark { background: #FFF2B8; color: inherit; border-radius: 3px; padding: 0 1px; 
 @media (prefers-reduced-motion: reduce) {
   * { animation: none !important; transition: none !important; }
 }
+
+/* ===== 아이폰 화면 고정 (2026-11-28) =====
+   사파리·홈 화면 앱에서 화면이 커졌다 작아졌다 하지 않도록
+   - 입력창 글자는 16px 이상(아이폰 자동 확대 방지)
+   - 가로 넘침·바운스 스크롤 막음, 글자 자동 확대 막음 */
+html, body {
+  overflow-x: hidden;
+  overscroll-behavior-y: contain;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+html { touch-action: manipulation; }
+input, textarea, select { font-size: max(16px, 1em); }
