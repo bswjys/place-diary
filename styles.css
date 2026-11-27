@@ -1,4 +1,17 @@
 /* 오늘의 발자국 — 토스풍 미니멀 포토 다이어리 */
+/* ===== 모달·시트 화면 고정 (2026-11-28) =====
+   창이 좌우·위아래로 흔들리지 않도록 오버레이는 배경 스크롤을 물고,
+   시트·다이얼로그 안쪽만 세로로 스크롤한다. */
+.overlay, .lightbox, .sheet-backdrop, .dialog-backdrop {
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+}
+.sheet, .sheet-body, .dialog, .search-panel {
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
+}
 :root {
   --bg: #F5F6F8;
   --card: #FFFFFF;
@@ -29,6 +42,16 @@ body {
   -webkit-text-size-adjust: 100%;
 }
 body.locked { overflow: hidden; }
+
+/* 모달·추가창 화면 고정 — top은 여는 순간의 스크롤 위치로 JS가 맞춘다 */
+body.modal-open {
+  position: fixed;
+  left: 0;
+  right: 0;
+  width: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
 button { font: inherit; color: inherit; cursor: pointer; border: 0; background: none; }
 input, textarea { font: inherit; color: inherit; }
 h1, h2, h3, p, ul, li { margin: 0; padding: 0; }

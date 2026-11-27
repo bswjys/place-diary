@@ -3,8 +3,8 @@
  *  - 아이콘·manifest: 캐시 우선
  *  - 기록과 사진은 서비스워커가 아니라 IndexedDB에 저장된다 (여기서는 다루지 않음)
  */
-const CACHE = 'place-diary-v4';
-const VERSION = '4';
+const CACHE = 'place-diary-v5';
+const VERSION = '5';
 const ASSETS = [
   './',
   './index.html',
