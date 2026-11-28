@@ -931,8 +931,24 @@ async function handleFiles(trigger, fileList) {
   }
   const take = files.slice(0, room);
   if (files.length > room) toast(`사진은 ${MAX_PHOTOS}장까지만 넣을 수 있어요`);
+
+  // 고른 사진마다 자르기 모달을 1 / N 순서로 띄운다 (원본 그대로 / 자르기 적용)
+  let picked = take;
+  if (window.CropKit && window.CropKit.open) {
+    setPhotoBusy(true, '사진 자르는 중…');
+    try {
+      picked = await window.CropKit.open(take);
+    } finally {
+      setPhotoBusy(false);
+    }
+  }
+  if (!picked.length) {
+    renderPhotoPreviews();
+    return;
+  }
+
   setPhotoBusy(true);
-  for (const file of take) {
+  for (const file of picked) {
     try {
       const c = await compressImage(file);
       day.pending.push({ ...c, url: URL.createObjectURL(c.full) });

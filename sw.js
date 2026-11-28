@@ -3,15 +3,17 @@
  *  - 아이콘·manifest: 캐시 우선
  *  - 기록과 사진은 서비스워커가 아니라 IndexedDB에 저장된다 (여기서는 다루지 않음)
  */
-const CACHE = 'place-diary-v5';
-const VERSION = '5';
+const CACHE = 'place-diary-v6';
+const VERSION = '6';
 const ASSETS = [
   './',
   './index.html',
   './styles.css?v=' + VERSION,
   './app.js?v=' + VERSION,
+  './crop.js?v=' + VERSION,
   './styles.css',
   './app.js',
+  './crop.js',
   './manifest.webmanifest',
   './icon-180.png',
   './icon-192.png',
@@ -20,7 +22,7 @@ const ASSETS = [
   './apple-touch-icon.png'
 ];
 
-const isCode = (path) => /\/app\.js$/.test(path) || /\/styles\.css$/.test(path) || /\/index\.html$/.test(path) || /\/$/.test(path);
+const isCode = (path) => /\/app\.js$/.test(path) || /\/crop\.js$/.test(path) || /\/styles\.css$/.test(path) || /\/index\.html$/.test(path) || /\/$/.test(path);
 
 self.addEventListener('install', (event) => {
   event.waitUntil(

@@ -17,6 +17,8 @@
 - JSON 내보내기 / 새 저장공간에서 불러오기(사진·시간·순서 포함)
 - v2 기록 호환(시간·순서 없는 기록을 직접 넣고 새로고침)
 - 라이트박스, PC 레이아웃, 콘솔 오류 0
+- 사진 자르기(크롭) 모달: 열면 ✨ 자동 맞춤(어두운 배경 속 영수증), 비율 칩·↺ 90° 회전·드래그,
+  폴백·원본 그대로·1/N(최대 3장) 순서 · 04_crop_modal_390.png
 - 대표 스크린샷 downloads/place_diary/ 01_v3_timeline_390.png 등
 """
 import datetime
@@ -84,6 +86,31 @@ PHOTO_A = make_photo(os.path.join(FIXTURES, 'test_cafe_landscape.jpg'), (1600, 1
                      (255, 214, 165), (120, 160, 220), 'CAFE 2026')
 PHOTO_B = make_photo(os.path.join(FIXTURES, 'test_church_portrait.jpg'), (1200, 1600),
                      (198, 226, 255), (255, 236, 210), 'CHURCH 2026')
+
+
+def make_doc_photo(path, w=1400, h=1900, rect=(0.18, 0.22, 0.86, 0.80)):
+    """어두운 책상 위 밝은 영수증 — 자동 맞춤 확인용.
+    rect = (왼, 위, 오른, 아래) 정규화 좌표"""
+    img = Image.new('RGB', (w, h), (26, 28, 32))
+    d = ImageDraw.Draw(img)
+    for i in range(0, h, 9):
+        d.line([(0, i), (w, i)], fill=(30 + (i * 5) % 7, 29, 34), width=2)
+    x0, y0, x1, y1 = [int(v * (w if k % 2 == 0 else h)) for k, v in enumerate(rect)]
+    d.rectangle([x0, y0, x1, y1], fill=(248, 246, 240))
+    d.rectangle([x0 + 12, y0 + 12, x1 - 12, y1 - 12], outline=(212, 208, 198), width=5)
+    for i in range(13):
+        yy = y0 + 80 + i * 70
+        if yy > y1 - 90:
+            break
+        d.line([(x0 + 70, yy), (x1 - 70 - (i % 3) * 80, yy)], fill=(148, 150, 156), width=10)
+    d.rectangle([x0 + 70, y1 - 150, x0 + 430, y1 - 70], fill=(60, 62, 70))
+    img.save(path, 'JPEG', quality=90)
+    return path, rect
+
+
+DOC_PHOTO, DOC_RECT = make_doc_photo(os.path.join(FIXTURES, 'test_receipt_dark.jpg'))
+FLAT_PHOTO = os.path.join(FIXTURES, 'test_flat.jpg')
+Image.new('RGB', (1600, 1200), (176, 178, 182)).save(FLAT_PHOTO, 'JPEG', quality=88)
 
 KEY_JS = """(n) => {
     const d = new Date();
@@ -167,6 +194,32 @@ def open_day(page, key):
     page.click(f'.day[data-date="{key}"]')
     page.wait_for_selector(f'.day[data-date="{key}"].selected')
     page.wait_for_timeout(420)
+
+
+def crop_ready(page, timeout=15000):
+    """크롭 모달이 떴고 사진 준비(로딩)가 끝날 때까지 기다린다."""
+    page.wait_for_selector('#cropWrap:not([hidden])', timeout=timeout)
+    page.wait_for_function('() => !window.CropKit || !window.CropKit.state.busy', timeout=timeout)
+    page.wait_for_timeout(120)
+
+
+def upload_photo(page, selector, files, action='original'):
+    """사진 고르기 → 크롭 모달을 장마다 넘긴다 (original=원본 그대로, apply=자르기 적용)."""
+    page.set_input_files(selector, files)
+    total = len(files) if isinstance(files, list) else 1
+    for _ in range(total + 2):
+        shown = False
+        for _ in range(40):
+            if page.is_visible('#cropWrap'):
+                shown = True
+                break
+            page.wait_for_timeout(50)
+        if not shown:
+            break
+        page.wait_for_function('() => !window.CropKit || !window.CropKit.state.busy', timeout=15000)
+        page.wait_for_timeout(100)
+        page.click('#cropApply' if action == 'apply' else '#cropOriginal')
+        page.wait_for_timeout(150)
 
 
 with sync_playwright() as pw:
@@ -372,7 +425,7 @@ with sync_playwright() as pw:
 
     page.fill('#placeInput', '연남동 카페')
 
-    page.set_input_files('#albumInput', PHOTO_A)
+    upload_photo(page, '#albumInput', PHOTO_A)
     page.wait_for_selector('.photo-item img', timeout=15000)
     check('사진 미리보기 1장', page.locator('.photo-item').count() == 1)
 
@@ -423,7 +476,7 @@ with sync_playwright() as pw:
     page.wait_for_timeout(250)
     check('+ 기록 추가로 외출 입력칸', page.locator('#placeField').is_visible())
     page.fill('#placeInput', '교회')
-    page.set_input_files('#albumInput', PHOTO_B)
+    upload_photo(page, '#albumInput', PHOTO_B)
     page.wait_for_selector('.photo-item img', timeout=15000)
     page.fill('#noteInput', '저녁 예배 후 정윤선 디렉터와 내일 일정 이야기.')
     page.click('#formSave')
@@ -543,7 +596,7 @@ with sync_playwright() as pw:
     page.click('#addMoreBtn')
     page.wait_for_selector('#entryForm:not([hidden])')
     page.fill('#placeInput', '테스트 장소')
-    page.set_input_files('#albumInput', PHOTO_B)
+    upload_photo(page, '#albumInput', PHOTO_B)
     page.wait_for_selector('.photo-item img', timeout=15000)
     page.fill('#noteInput', '종류 바꾸기 테스트')
     page.click('#formSave')
@@ -569,6 +622,160 @@ with sync_playwright() as pw:
     page.click('#dialogOk')
     page.wait_for_timeout(1000)
     check('임시 기록 정리 후 2개', page.locator('.rec').count() == 2, page.locator('.rec').count())
+
+    # --- ✂️ 사진 자르기(크롭) 모달 · ✨ 자동 맞춤
+    page.click('#addMoreBtn')
+    page.wait_for_selector('#entryForm:not([hidden])')
+    page.wait_for_selector('#placeField:not([hidden])')
+    page.wait_for_timeout(250)
+    scroll_before = page.evaluate('window.scrollY')
+
+    page.set_input_files('#albumInput', DOC_PHOTO)
+    crop_ready(page)
+    check('사진 고르면 크롭 모달', page.is_visible('#cropWrap'))
+    check('크롭 제목', '사진 자르기' in page.locator('.crop-title').inner_text())
+    check('1 / 1 표시', page.locator('#cropStep').inner_text().strip() == '1 / 1', page.locator('#cropStep').inner_text())
+    check('모달 role=dialog', page.get_attribute('.crop-panel', 'aria-modal') == 'true')
+    check('비율 칩 4개', page.locator('#cropChips button').all_inner_texts() == ['자유', '1:1', '3:4', '4:3'],
+          page.locator('#cropChips button').all_inner_texts())
+    check('기본은 자유', page.get_attribute('#cropChips button[data-ratio="free"]', 'aria-pressed') == 'true')
+    check('모서리 핸들 4개', page.locator('.crop-handle').count() == 4)
+    check('자동 맞춤 버튼 이름', '자동 맞춤' in page.locator('#cropAuto').inner_text(),
+          page.locator('#cropAuto').inner_text())
+    st = page.evaluate('window.CropKit.state')
+    check('열면 자동 맞춤', st['auto'] is True, st.get('auto'))
+    ar = st['autoRect'] or {}
+    dr_l, dr_t, dr_r, dr_b = DOC_RECT
+    check('자동 영역 = 영수증(왼·오른)',
+          abs(ar.get('x', 0) - dr_l) <= 0.05 and abs(ar.get('x', 0) + ar.get('w', 0) - dr_r) <= 0.06, ar)
+    check('자동 영역 = 영수증(위·아래)',
+          abs(ar.get('y', 0) - dr_t) <= 0.05 and abs(ar.get('y', 0) + ar.get('h', 0) - dr_b) <= 0.06, ar)
+    check('자동 박스는 사진보다 작다',
+          st['box']['w'] < st['fit']['w'] - 10 and st['box']['h'] < st['fit']['h'] - 10, st['box'])
+    check('캔버스에 사진이 그려짐', page.evaluate("""() => {
+        const c = document.getElementById('cropCanvas');
+        const d = c.getContext('2d').getImageData(Math.round(c.width / 2), Math.round(c.height / 2), 1, 1).data;
+        return d[3];
+    }""") > 0)
+    check('크롭 중 배경 스크롤 잠금', page.evaluate("document.documentElement.classList.contains('crop-open')"))
+    check('크롭 스테이지 touch-action none',
+          'none' in page.evaluate("getComputedStyle(document.getElementById('cropStage')).touchAction"))
+    check('크롭 중 가로 넘침 0', overflow(page) <= 1, overflow(page))
+    shot = os.path.join(SHOTS, '04_crop_modal_390.png')
+    page.screenshot(path=shot)
+    check('04_crop_modal_390.png 저장', os.path.getsize(shot) > 20000, os.path.getsize(shot) if os.path.exists(shot) else 0)
+
+    page.click('#cropChips button[data-ratio="1:1"]')
+    page.wait_for_timeout(150)
+    st11 = page.evaluate('window.CropKit.state')
+    check('1:1 칩 → 정사각', abs(st11['box']['w'] - st11['box']['h']) <= 1, st11['box'])
+    page.click('#cropChips button[data-ratio="3:4"]')
+    page.wait_for_timeout(150)
+    st34 = page.evaluate('window.CropKit.state')
+    check('3:4 칩', abs(st34['box']['w'] / st34['box']['h'] - 0.75) <= 0.02, st34['box'])
+    page.click('#cropChips button[data-ratio="4:3"]')
+    page.wait_for_timeout(150)
+    st43 = page.evaluate('window.CropKit.state')
+    check('4:3 칩', abs(st43['box']['w'] / st43['box']['h'] - 4 / 3) <= 0.02, st43['box'])
+    fit_before = st43['fit']
+    page.click('#cropRotate')
+    page.wait_for_timeout(300)
+    st_rot = page.evaluate('window.CropKit.state')
+    check('↺ 90° 회전', st_rot['rotation'] == 90, st_rot['rotation'])
+    check('회전하면 사진 방향 90°',
+          abs((st_rot['fit']['w'] / st_rot['fit']['h']) - (fit_before['h'] / fit_before['w'])) <= 0.03,
+          (round(fit_before['w']), round(fit_before['h']), round(st_rot['fit']['w']), round(st_rot['fit']['h'])))
+    check('회전 뒤에도 자동 맞춤 유지', st_rot['auto'] is True, st_rot.get('auto'))
+
+    box_px = page.locator('#cropBox').bounding_box()
+    page.mouse.move(box_px['x'] + box_px['width'], box_px['y'] + box_px['height'])
+    page.mouse.down()
+    page.mouse.move(box_px['x'] + box_px['width'] - 60, box_px['y'] + box_px['height'] - 40, steps=6)
+    page.mouse.up()
+    page.wait_for_timeout(150)
+    st_drag = page.evaluate('window.CropKit.state')
+    check('모서리 드래그로 박스 조절', st_drag['box']['w'] < st_rot['box']['w'] - 10,
+          (round(st_rot['box']['w']), round(st_drag['box']['w'])))
+    check('드래그하면 자동 표시 풀림', st_drag['auto'] is False, st_drag.get('auto'))
+    check('드래그해도 배경 그대로', page.evaluate('window.scrollY') == scroll_before)
+
+    body_px = page.locator('#cropBox').bounding_box()
+    page.mouse.move(body_px['x'] + body_px['width'] / 2, body_px['y'] + body_px['height'] / 2)
+    page.mouse.down()
+    page.mouse.move(body_px['x'] + body_px['width'] / 2 + 20, body_px['y'] + body_px['height'] / 2 + 24, steps=6)
+    page.mouse.up()
+    page.wait_for_timeout(150)
+    st_move = page.evaluate('window.CropKit.state')
+    check('박스 몸통 드래그로 이동',
+          abs(st_move['box']['x'] - st_drag['box']['x']) > 4 or abs(st_move['box']['y'] - st_drag['box']['y']) > 4,
+          (st_drag['box'], st_move['box']))
+
+    page.click('#cropAuto')
+    page.wait_for_timeout(250)
+    st_auto = page.evaluate('window.CropKit.state')
+    check('✨ 자동 맞춤 버튼 다시', st_auto['auto'] is True, st_auto.get('auto'))
+    check('자동 맞춤이 영수증 영역으로 되돌림',
+          abs(st_auto['box']['w'] - st_rot['box']['w']) <= 2, (st_auto['box']['w'], st_rot['box']['w']))
+
+    page.click('#cropApply')
+    page.wait_for_selector('#cropWrap', state='hidden', timeout=15000)
+    page.wait_for_selector('.photo-item img', timeout=15000)
+    check('자르기 적용 → 미리보기', page.locator('.photo-item').count() == 1, page.locator('.photo-item').count())
+    check('적용 후 모달 닫힘', page.locator('#cropWrap').is_hidden())
+    check('적용 후 스크롤 잠금 해제',
+          page.evaluate("!document.documentElement.classList.contains('crop-open')"))
+    shape = page.evaluate("""() => {
+        const i = document.querySelector('.photo-item img');
+        return i ? [i.naturalWidth, i.naturalHeight] : null;
+    }""")
+    check('자른 사진은 고른 비율(4:3)', shape and abs(shape[0] / shape[1] - 4 / 3) <= 0.03, shape)
+    check('자른 사진 1200px 이하', shape and max(shape) <= 1200, shape)
+
+    # 찾을 게 없는 단색 사진은 기본 박스로 폴백 · 원본 그대로
+    page.locator('.photo-item .rm').first.click()
+    page.wait_for_timeout(200)
+    page.set_input_files('#albumInput', FLAT_PHOTO)
+    crop_ready(page)
+    st_flat = page.evaluate('window.CropKit.state')
+    check('찾을 게 없으면 자동 맞춤 건너뜀', st_flat['auto'] is False, st_flat.get('auto'))
+    check('폴백은 사진 전체 박스',
+          abs(st_flat['box']['w'] - st_flat['fit']['w']) <= 1
+          and abs(st_flat['box']['h'] - st_flat['fit']['h']) <= 1, st_flat['box'])
+    page.click('#cropOriginal')
+    page.wait_for_selector('.photo-item img', timeout=15000)
+    check('원본 그대로 첨부', page.locator('.photo-item').count() == 1, page.locator('.photo-item').count())
+    shape2 = page.evaluate("""() => {
+        const i = document.querySelector('.photo-item img');
+        return i ? [i.naturalWidth, i.naturalHeight] : null;
+    }""")
+    check('원본 그대로는 4:3 유지', shape2 and abs(shape2[0] / shape2[1] - 4 / 3) < 0.02, shape2)
+
+    # 여러 장(최대 4장) 1 / N 순서
+    page.locator('.photo-item .rm').first.click()
+    page.wait_for_timeout(150)
+    page.set_input_files('#albumInput', [DOC_PHOTO, PHOTO_B, PHOTO_A])
+    crop_ready(page)
+    check('여러 장이면 1 / 3', page.locator('#cropStep').inner_text().strip() == '1 / 3',
+          page.locator('#cropStep').inner_text())
+    page.click('#cropApply')
+    page.wait_for_function("() => window.CropKit.state.index === 1 && !window.CropKit.state.busy", timeout=15000)
+    check('두 번째 장 2 / 3', page.locator('#cropStep').inner_text().strip() == '2 / 3',
+          page.locator('#cropStep').inner_text())
+    page.click('#cropOriginal')
+    page.wait_for_function("() => window.CropKit.state.index === 2 && !window.CropKit.state.busy", timeout=15000)
+    check('세 번째 장 3 / 3', page.locator('#cropStep').inner_text().strip() == '3 / 3',
+          page.locator('#cropStep').inner_text())
+    page.click('#cropApply')
+    page.wait_for_selector('#cropWrap', state='hidden', timeout=15000)
+    page.wait_for_timeout(900)
+    check('세 장 모두 미리보기', page.locator('.photo-item').count() == 3, page.locator('.photo-item').count())
+
+    page.click('#formCancel')
+    page.wait_for_timeout(300)
+    check('크롭 테스트는 저장하지 않음', page.locator('#entryForm').is_hidden())
+    dump = db_dump(page)
+    check('크롭 테스트 뒤 저장된 기록 그대로 2개', len(dump['entries']) == 2, len(dump['entries']))
+    check('크롭 테스트 뒤 저장된 사진 그대로 1장', len(dump['photos']) == 1, len(dump['photos']))
 
     # --- 검색 (장소 / 내용) → 그 날짜가 선택되고 아래 카드로
     page.click('#searchBtn')
@@ -646,7 +853,7 @@ with sync_playwright() as pw:
         if place:
             page.fill('#placeInput', place)
         if photo:
-            page.set_input_files('#albumInput', photo)
+            upload_photo(page, '#albumInput', photo)
             page.wait_for_selector('.photo-item img', timeout=15000)
         if time:
             page.fill('#timeInput', time)
